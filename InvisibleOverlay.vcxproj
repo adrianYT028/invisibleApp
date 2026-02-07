@@ -63,7 +63,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;ole32.lib;uuid.lib;winhttp.lib;sapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   
@@ -85,7 +85,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;ole32.lib;uuid.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>user32.lib;gdi32.lib;dwmapi.lib;ole32.lib;uuid.lib;winhttp.lib;sapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   
@@ -94,6 +94,10 @@
     <ClCompile Include="src\overlay_window.cpp" />
     <ClCompile Include="src\audio_capture.cpp" />
     <ClCompile Include="src\screen_capture.cpp" />
+    <ClCompile Include="src\http_client.cpp" />
+    <ClCompile Include="src\ai_service.cpp" />
+    <ClCompile Include="src\text_to_speech.cpp" />
+    <ClCompile Include="src\meeting_assistant.cpp" />
   </ItemGroup>
   
   <ItemGroup>
@@ -101,6 +105,10 @@
     <ClInclude Include="src\overlay_window.h" />
     <ClInclude Include="src\audio_capture.h" />
     <ClInclude Include="src\screen_capture.h" />
+    <ClInclude Include="src\http_client.h" />
+    <ClInclude Include="src\ai_service.h" />
+    <ClInclude Include="src\text_to_speech.h" />
+    <ClInclude Include="src\meeting_assistant.h" />
   </ItemGroup>
   
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

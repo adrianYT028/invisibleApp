@@ -29,6 +29,10 @@ set(SOURCES
     src/overlay_window.cpp
     src/audio_capture.cpp
     src/screen_capture.cpp
+    src/http_client.cpp
+    src/ai_service.cpp
+    src/text_to_speech.cpp
+    src/meeting_assistant.cpp
 )
 
 set(HEADERS
@@ -36,6 +40,10 @@ set(HEADERS
     src/overlay_window.h
     src/audio_capture.h
     src/screen_capture.h
+    src/http_client.h
+    src/ai_service.h
+    src/text_to_speech.h
+    src/meeting_assistant.h
 )
 
 # Create executable (WIN32 for Windows GUI app without console)
@@ -48,6 +56,8 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     dwmapi
     ole32
     uuid
+    winhttp
+    sapi
 )
 
 # MSVC-specific settings

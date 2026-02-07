@@ -8,25 +8,7 @@
 #define _UNICODE
 #endif
 
-// Windows version targeting (Windows 10 2004+)
-#define WINVER 0x0A00
-#define _WIN32_WINNT 0x0A00
-#define NTDDI_VERSION NTDDI_WIN10_VB
-
-#include <windows.h>
-#include <windowsx.h>  // For GET_X_LPARAM, GET_Y_LPARAM
-#include <dwmapi.h>
-
-// Fallback definitions for GET_X_LPARAM and GET_Y_LPARAM if not defined
-// (can happen with WIN32_LEAN_AND_MEAN)
-#ifndef GET_X_LPARAM
-#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
-#endif
-
-#ifndef GET_Y_LPARAM
-#define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
-#endif
-
+// Include C++ standard library headers FIRST (before Windows headers)
 #include <string>
 #include <memory>
 #include <functional>
@@ -37,6 +19,26 @@
 #include <iostream>
 #include <sstream>
 #include <iomanip>
+
+// Windows version targeting (Windows 10 2004+)
+#define WINVER 0x0A00
+#define _WIN32_WINNT 0x0A00
+#define NTDDI_VERSION NTDDI_WIN10_VB
+
+// Windows headers AFTER C++ standard library
+// NOTE: Do NOT include <windowsx.h> - it has macro conflicts with MSVC STL
+#include <windows.h>
+#include <dwmapi.h>
+
+// Define GET_X_LPARAM and GET_Y_LPARAM manually (normally from windowsx.h)
+// This avoids the macro conflicts with the C++ standard library
+#ifndef GET_X_LPARAM
+#define GET_X_LPARAM(lp) ((int)(short)LOWORD(lp))
+#endif
+
+#ifndef GET_Y_LPARAM
+#define GET_Y_LPARAM(lp) ((int)(short)HIWORD(lp))
+#endif
 
 #pragma comment(lib, "dwmapi.lib")
 #pragma comment(lib, "user32.lib")

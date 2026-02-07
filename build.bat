@@ -61,9 +61,9 @@ if %errorlevel% equ 0 (
     :: Direct MSVC compilation
     cd ..
     
-    set SOURCES=src\main.cpp src\overlay_window.cpp src\audio_capture.cpp src\screen_capture.cpp
+    set SOURCES=src\main.cpp src\overlay_window.cpp src\audio_capture.cpp src\screen_capture.cpp src\http_client.cpp src\ai_service.cpp src\text_to_speech.cpp src\meeting_assistant.cpp
     set INCLUDES=/Isrc
-    set LIBS=user32.lib gdi32.lib dwmapi.lib ole32.lib uuid.lib
+    set LIBS=user32.lib gdi32.lib dwmapi.lib ole32.lib uuid.lib winhttp.lib sapi.lib
     set DEFINES=/DWINVER=0x0A00 /D_WIN32_WINNT=0x0A00 /DUNICODE /D_UNICODE /DNOMINMAX
     set FLAGS=/EHsc /W4 /O2 /std:c++17 /MT
     
