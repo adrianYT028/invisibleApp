@@ -44,7 +44,7 @@ struct AppConfig {
   // AI Configuration
   std::string openaiApiKey;
   std::string gptModel = "gpt-4o-mini";
-  bool enableTTS = true;
+  bool enableTTS = false; // Disabled by default - use --tts to enable
 };
 
 // Additional hotkey IDs for AI features
@@ -349,7 +349,10 @@ void InvisibleApp::OnHotkey(int hotkeyId) {
   case AIHotkeys::HOTKEY_ASK_AI: {
     if (meetingAssistant_ && aiInitialized_) {
       meetingAssistant_->AskQuestion(
-          "What are the key points being discussed?");
+          "Listen to the transcript carefully. If there is a question being "
+          "asked, "
+          "provide the DIRECT ANSWER to that question. Do not list key points "
+          "or summarize.");
       statusText_ = L"Asking AI...";
       if (overlay_)
         overlay_->Invalidate();
@@ -392,11 +395,20 @@ void InvisibleApp::OnRegionSelected(const Rect &region) {
 
   CapturedImage capture = ScreenCapture::CaptureRegion(region);
   if (capture.IsValid()) {
-    static int captureCount = 0;
-    std::wstring filename =
-        L"capture_" + std::to_wstring(++captureCount) + L".bmp";
-    ScreenCapture::SaveToBmp(capture, filename.c_str());
-    statusText_ = L"Region captured: " + filename;
+    statusText_ = L"Analyzing captured region with AI...";
+    if (overlay_)
+      overlay_->Invalidate();
+
+    // Convert to base64 and send to AI vision
+    std::string base64Data = ScreenCapture::ConvertToBase64Bmp(capture);
+
+    if (!base64Data.empty() && meetingAssistant_) {
+      meetingAssistant_->AnalyzeImage(base64Data);
+    } else {
+      statusText_ = L"Failed to encode image";
+    }
+  } else {
+    statusText_ = L"Failed to capture region";
   }
 
   if (overlay_)

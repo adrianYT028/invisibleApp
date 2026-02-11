@@ -32,11 +32,12 @@ struct MeetingAssistantConfig {
 
   // Transcription settings
   float transcriptionIntervalSec =
-      5.0f;                        // How often to send audio for transcription
+      15.0f; // Longer chunks = much better Whisper accuracy
   int maxTranscriptLength = 10000; // Max chars to keep in rolling transcript
+  float minAudioLengthSec = 3.0f;  // Minimum audio before transcribing
 
   // TTS settings
-  bool enableTTS = true;
+  bool enableTTS = false;
   int ttsRate = 1; // Slightly faster than normal
   int ttsVolume = 80;
 
@@ -122,6 +123,10 @@ public:
   // Stop current TTS
   void StopSpeaking();
 
+  // Vision - analyze screen capture with AI
+  void AnalyzeImage(const std::string &base64ImageData,
+                    const std::string &prompt = "");
+
   // IAudioCaptureHandler implementation
   void OnAudioData(const AudioBuffer &buffer,
                    const AudioFormat &format) override;
@@ -177,6 +182,11 @@ private:
   std::queue<AIQuery> queryQueue_;
   std::mutex queryMutex_;
   std::condition_variable queryCV_;
+
+  // Conversation memory (last N Q&A pairs for follow-up context)
+  std::vector<std::pair<std::string, std::string>>
+      conversationHistory_; // {question, answer}
+  static constexpr int MAX_CONVERSATION_HISTORY = 10;
 
   // Worker threads
   std::thread transcriptionThread_;

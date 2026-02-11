@@ -261,6 +261,85 @@ void MeetingAssistant::OnCaptureError(HRESULT hr, const wchar_t *context) {
 }
 
 // -----------------------------------------------------------------------------
+// Audio Resampling: Convert to 16kHz mono 16-bit (Whisper's optimal format)
+// -----------------------------------------------------------------------------
+
+static std::vector<BYTE>
+ResampleTo16kMono16bit(const std::vector<BYTE> &audioData,
+                       const AudioFormat &format) {
+
+  size_t srcBytesPerSample = format.bitsPerSample / 8;
+  size_t srcFrameSize = srcBytesPerSample * format.channels;
+  size_t numSrcFrames = audioData.size() / srcFrameSize;
+
+  if (numSrcFrames == 0)
+    return {};
+
+  // Step 1: Convert to mono float samples
+  std::vector<float> monoSamples(numSrcFrames);
+
+  for (size_t i = 0; i < numSrcFrames; i++) {
+    float sum = 0.0f;
+    const BYTE *frame = audioData.data() + i * srcFrameSize;
+
+    for (UINT16 ch = 0; ch < format.channels; ch++) {
+      const BYTE *sample = frame + ch * srcBytesPerSample;
+      float value = 0.0f;
+
+      if (format.bitsPerSample == 32) {
+        // Float32 (WASAPI default)
+        value = *reinterpret_cast<const float *>(sample);
+      } else if (format.bitsPerSample == 16) {
+        // Int16
+        value = *reinterpret_cast<const INT16 *>(sample) / 32768.0f;
+      } else if (format.bitsPerSample == 24) {
+        // Int24
+        int32_t val = (sample[0]) | (sample[1] << 8) | (sample[2] << 16);
+        if (val & 0x800000)
+          val |= 0xFF000000; // sign extend
+        value = val / 8388608.0f;
+      }
+      sum += value;
+    }
+    monoSamples[i] = sum / format.channels;
+  }
+
+  // Step 2: Resample from source rate to 16000 Hz
+  const UINT32 targetRate = 16000;
+  double ratio = (double)targetRate / format.sampleRate;
+  size_t numDstFrames = (size_t)(numSrcFrames * ratio);
+
+  std::vector<INT16> resampled(numDstFrames);
+
+  for (size_t i = 0; i < numDstFrames; i++) {
+    double srcIdx = i / ratio;
+    size_t idx0 = (size_t)srcIdx;
+    size_t idx1 = idx0 + 1;
+    double frac = srcIdx - idx0;
+
+    if (idx1 >= numSrcFrames)
+      idx1 = numSrcFrames - 1;
+
+    // Linear interpolation
+    float value =
+        (float)(monoSamples[idx0] * (1.0 - frac) + monoSamples[idx1] * frac);
+
+    // Clamp and convert to int16
+    if (value > 1.0f)
+      value = 1.0f;
+    if (value < -1.0f)
+      value = -1.0f;
+    resampled[i] = (INT16)(value * 32767.0f);
+  }
+
+  // Step 3: Convert to byte vector
+  std::vector<BYTE> result(numDstFrames * 2);
+  memcpy(result.data(), resampled.data(), result.size());
+
+  return result;
+}
+
+// -----------------------------------------------------------------------------
 // Transcription Worker Thread
 // -----------------------------------------------------------------------------
 
@@ -289,9 +368,10 @@ void MeetingAssistant::TranscriptionWorker() {
       format = audioFormat_;
     }
 
-    // Skip if too little audio (less than 1 second)
+    // Skip if too little audio
     size_t bytesPerSecond = format.avgBytesPerSec;
-    if (bytesPerSecond > 0 && audioData.size() < bytesPerSecond) {
+    size_t minBytes = (size_t)(bytesPerSecond * config_.minAudioLengthSec);
+    if (bytesPerSecond > 0 && audioData.size() < minBytes) {
       // Put data back for next iteration
       std::lock_guard<std::mutex> lock(audioMutex_);
       audioBuffer_.insert(audioBuffer_.begin(), audioData.begin(),
@@ -299,9 +379,16 @@ void MeetingAssistant::TranscriptionWorker() {
       continue;
     }
 
-    // Transcribe
-    std::string text = aiService_.Transcribe(
-        audioData, format.sampleRate, format.channels, format.bitsPerSample);
+    // Resample to 16kHz mono 16-bit for optimal Whisper performance
+    std::vector<BYTE> resampledData = ResampleTo16kMono16bit(audioData, format);
+
+    if (resampledData.empty()) {
+      OutputDebugStringW(L"[MeetingAssistant] Resampling failed, skipping\n");
+      continue;
+    }
+
+    // Transcribe using resampled 16kHz mono 16-bit audio
+    std::string text = aiService_.Transcribe(resampledData, 16000, 1, 16);
 
     if (!text.empty()) {
       AppendTranscript(text);
@@ -345,10 +432,46 @@ void MeetingAssistant::AIWorker() {
     MeetingAssistantEvent::Type eventType;
 
     switch (query.type) {
-    case AIQuery::QUESTION:
-      response = aiService_.AnswerQuestion(query.question, transcript);
+    case AIQuery::QUESTION: {
+      // Build messages with conversation memory
+      std::vector<ChatMessage> messages;
+
+      // System prompt
+      messages.push_back({"system",
+                          "You are an expert interview and meeting assistant. "
+                          "Provide DIRECT ANSWERS to questions. Do NOT "
+                          "summarize unless asked. "
+                          "If there's a coding question, provide the solution. "
+                          "Be concise and accurate."});
+
+      // Transcript context
+      if (!transcript.empty()) {
+        messages.push_back(
+            {"system", "Current meeting/interview transcript:\n" + transcript});
+      }
+
+      // Previous conversation history (for follow-up context)
+      for (const auto &exchange : conversationHistory_) {
+        messages.push_back({"user", exchange.first});
+        messages.push_back({"assistant", exchange.second});
+      }
+
+      // Current question
+      messages.push_back({"user", query.question});
+
+      response = aiService_.Chat(messages);
       eventType = MeetingAssistantEvent::AI_RESPONSE;
+
+      // Store in conversation history
+      if (!response.empty()) {
+        conversationHistory_.push_back({query.question, response});
+        // Trim to max history
+        while ((int)conversationHistory_.size() > MAX_CONVERSATION_HISTORY) {
+          conversationHistory_.erase(conversationHistory_.begin());
+        }
+      }
       break;
+    }
 
     case AIQuery::SUMMARY:
       response = aiService_.Summarize(transcript);
@@ -375,6 +498,29 @@ void MeetingAssistant::AIWorker() {
   }
 
   OutputDebugStringW(L"[MeetingAssistant] AI worker stopped\n");
+}
+
+void MeetingAssistant::AnalyzeImage(const std::string &base64ImageData,
+                                    const std::string &prompt) {
+  if (!initialized_) {
+    EmitEvent(MeetingAssistantEvent::EVENT_ERROR, "",
+              "Meeting assistant not initialized");
+    return;
+  }
+
+  // Run on a background thread to avoid blocking UI
+  std::thread([this, base64ImageData, prompt]() {
+    EmitEvent(MeetingAssistantEvent::AI_RESPONSE, "Analyzing image...");
+
+    std::string response = aiService_.AnalyzeImage(base64ImageData, prompt);
+
+    if (!response.empty()) {
+      EmitEvent(MeetingAssistantEvent::AI_RESPONSE, response);
+    } else {
+      EmitEvent(MeetingAssistantEvent::EVENT_ERROR, "",
+                "Vision analysis failed: " + aiService_.GetLastError());
+    }
+  }).detach();
 }
 
 } // namespace invisible

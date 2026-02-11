@@ -7,7 +7,6 @@
 #include <string>
 #include <vector>
 
-
 namespace invisible {
 
 // -----------------------------------------------------------------------------
@@ -23,11 +22,15 @@ struct AIServiceConfig {
 
   // System prompt for meeting assistant behavior
   std::string systemPrompt =
-      "You are a helpful meeting assistant. You help answer questions about "
-      "the meeting content, summarize discussions, and provide clear, concise "
-      "responses. "
-      "Keep responses brief and actionable. When summarizing, use bullet "
-      "points.";
+      "You are an expert interview and meeting assistant. When given a "
+      "question "
+      "and meeting transcript context, provide the DIRECT ANSWER to the "
+      "question. "
+      "Do NOT summarize the transcript unless explicitly asked. "
+      "If the transcript contains a question being asked, answer it directly. "
+      "If it's a coding question, provide the code solution. "
+      "If it's a technical question, give the precise answer. "
+      "Be concise and accurate.";
 };
 
 // -----------------------------------------------------------------------------
@@ -112,6 +115,10 @@ public:
   std::string Transcribe(const std::vector<BYTE> &audioData, UINT32 sampleRate,
                          UINT16 channels, UINT16 bitsPerSample) override;
   std::string TranscribeWav(const std::vector<BYTE> &wavData) override;
+
+  // Vision - analyze image with AI
+  std::string AnalyzeImage(const std::string &base64ImageData,
+                           const std::string &prompt = "");
 
   // Get last error message
   std::string GetLastError() const { return lastError_; }

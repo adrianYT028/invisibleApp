@@ -157,6 +157,44 @@ std::string OpenAIService::ParseChatResponse(const std::string &response) {
       case '\\':
         result += '\\';
         break;
+      case '/':
+        result += '/';
+        break;
+      case 'u': {
+        // Handle \uXXXX unicode escapes (e.g. \u003c = '<', \u003e = '>')
+        if (i + 4 < response.length()) {
+          std::string hex = response.substr(i + 1, 4);
+          unsigned int codepoint = 0;
+          bool valid = true;
+          for (char h : hex) {
+            codepoint <<= 4;
+            if (h >= '0' && h <= '9')
+              codepoint |= (h - '0');
+            else if (h >= 'a' && h <= 'f')
+              codepoint |= (h - 'a' + 10);
+            else if (h >= 'A' && h <= 'F')
+              codepoint |= (h - 'A' + 10);
+            else {
+              valid = false;
+              break;
+            }
+          }
+          if (valid) {
+            if (codepoint < 0x80) {
+              result += (char)codepoint;
+            } else if (codepoint < 0x800) {
+              result += (char)(0xC0 | (codepoint >> 6));
+              result += (char)(0x80 | (codepoint & 0x3F));
+            } else {
+              result += (char)(0xE0 | (codepoint >> 12));
+              result += (char)(0x80 | ((codepoint >> 6) & 0x3F));
+              result += (char)(0x80 | (codepoint & 0x3F));
+            }
+            i += 4; // Skip the 4 hex digits
+          }
+        }
+        break;
+      }
       default:
         result += c;
       }
@@ -305,7 +343,16 @@ std::string OpenAIService::ExtractActionItems(const std::string &transcript) {
 
 std::string OpenAIService::AnswerQuestion(const std::string &question,
                                           const std::string &transcript) {
-  return Query(question, transcript);
+  // Build a targeted prompt that makes it clear we want an ANSWER
+  std::string prompt = "Based on the following meeting/interview transcript, "
+                       "answer this question DIRECTLY. Do NOT summarize the "
+                       "transcript. Just answer the question.\n\n"
+                       "Question: " +
+                       question +
+                       "\n\n"
+                       "Transcript:\n" +
+                       transcript;
+  return Query(prompt);
 }
 
 // -----------------------------------------------------------------------------
@@ -385,8 +432,12 @@ std::string OpenAIService::TranscribeWav(const std::vector<BYTE> &wavData) {
       L"Bearer " + std::wstring(config_.apiKey.begin(), config_.apiKey.end());
 
   std::map<std::string, std::string> fields;
-  fields["model"] = "whisper-large-v3"; // Groq's Whisper model
+  fields["model"] = "whisper-large-v3-turbo"; // Faster + accurate
   fields["response_format"] = "json";
+  fields["language"] = "en"; // Skip language detection = better accuracy
+  fields["prompt"] =
+      "This is a technical interview or meeting discussion. "
+      "Transcribe clearly with proper punctuation and formatting.";
 
   HttpResponse response = httpClient_.PostMultipart(
       endpoint, fields, "audio.wav", "file", wavData, "audio/wav", headers);
@@ -399,6 +450,83 @@ std::string OpenAIService::TranscribeWav(const std::vector<BYTE> &wavData) {
   }
 
   return ParseWhisperResponse(response.body);
+}
+
+// -----------------------------------------------------------------------------
+// Vision - Analyze Image with AI
+// -----------------------------------------------------------------------------
+
+std::string OpenAIService::AnalyzeImage(const std::string &base64ImageData,
+                                        const std::string &prompt) {
+  if (!initialized_) {
+    lastError_ = "Service not initialized";
+    return "";
+  }
+
+  if (base64ImageData.empty()) {
+    lastError_ = "No image data provided";
+    return "";
+  }
+
+  // Build vision payload with image
+  std::string userPrompt =
+      prompt.empty()
+          ? "You are an expert assistant. Read the text/question in this image "
+            "and provide the DIRECT ANSWER. Do NOT describe or summarize what "
+            "you see. Just answer the question or solve the problem shown. "
+            "If it's a coding question, provide the code solution in c++ if no "
+            "language is specified. "
+            "If it's a multiple choice question, state the correct option and "
+            "explain why. "
+            "Be precise and helpful."
+          : prompt;
+
+  std::ostringstream json;
+  json << "{";
+  json << "\"model\":\"meta-llama/llama-4-scout-17b-16e-instruct\",";
+  json << "\"max_tokens\":2048,";
+  json << "\"temperature\":0.3,";
+  json << "\"messages\":[";
+  json << "{\"role\":\"user\",\"content\":[";
+  json << "{\"type\":\"text\",\"text\":\"" << EscapeJson(userPrompt) << "\"},";
+  json << "{\"type\":\"image_url\",\"image_url\":{";
+  json << "\"url\":\"data:image/jpeg;base64," << base64ImageData << "\"";
+  json << "}}";
+  json << "]}";
+  json << "]}";
+
+  std::string payload = json.str();
+
+  // Groq API endpoint
+  std::wstring endpoint = L"https://api.groq.com/openai/v1/chat/completions";
+
+  std::map<std::wstring, std::wstring> headers;
+  headers[L"Authorization"] =
+      L"Bearer " + std::wstring(config_.apiKey.begin(), config_.apiKey.end());
+  headers[L"Content-Type"] = L"application/json";
+
+  OutputDebugStringA("[GroqService] Sending image to vision API...\n");
+
+  HttpResponse response = httpClient_.PostJson(endpoint, payload, headers);
+
+  if (!response.IsSuccess()) {
+    std::string errorMsg = "HTTP " + std::to_string(response.statusCode);
+    size_t msgPos = response.body.find("\"message\":");
+    if (msgPos != std::string::npos) {
+      size_t start = response.body.find('"', msgPos + 10) + 1;
+      size_t end = response.body.find('"', start);
+      if (start != std::string::npos && end != std::string::npos) {
+        errorMsg += ": " + response.body.substr(start, end - start);
+      }
+    }
+    lastError_ = errorMsg;
+    OutputDebugStringA(
+        ("[GroqService] Vision API error: " + response.body + "\n").c_str());
+    return "";
+  }
+
+  OutputDebugStringA("[GroqService] Vision response received\n");
+  return ParseChatResponse(response.body);
 }
 
 } // namespace invisible

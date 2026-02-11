@@ -26,10 +26,12 @@ Welcome! This document will teach you **everything** about how this AI Meeting A
 
 This application creates an **invisible overlay** on your screen that can:
 - 🎤 **Listen** to your computer's audio (what you hear through speakers)
-- 📝 **Transcribe** speech to text in real-time using AI
-- 🤖 **Answer questions** about the meeting content
+- 📝 **Transcribe** speech to text in real-time using AI (optimized 16kHz resampling)
+- 🤖 **Answer questions** directly about the meeting content
+- 📸 **Screen Capture → AI** — Select any area, AI reads and answers questions in it
+- 💬 **Conversation Memory** — Remembers last 10 Q&A for follow-up questions
 - 📋 **Summarize** meetings automatically
-- 🔊 **Speak responses** using text-to-speech
+- 🔊 **Speak responses** using text-to-speech (disabled by default)
 
 ### Why is it "Invisible"?
 
@@ -274,26 +276,42 @@ std::string OpenAIService::Chat(const std::vector<ChatMessage>& messages) {
 
 ### Speech-to-Text (Whisper)
 
-Groq also provides Whisper API for transcription:
+Groq provides Whisper API for transcription. We use `whisper-large-v3-turbo` with optimizations:
 
 ```cpp
-// Convert audio to WAV format
-std::vector<BYTE> wavData = ConvertToWav(audioData, sampleRate, channels, bits);
+// Audio is first resampled to 16kHz mono 16-bit (Whisper's native format)
+std::vector<BYTE> resampledData = ResampleTo16kMono16bit(audioData, format);
 
-// Send to Whisper API
-std::wstring endpoint = L"https://api.groq.com/openai/v1/audio/transcriptions";
+// Convert to WAV format
+std::vector<BYTE> wavData = ConvertToWav(resampledData, 16000, 1, 16);
 
-// Use multipart form data (file upload)
+// Send to Whisper API with language hint + prompt context
+std::map<std::string, std::string> fields;
+fields["model"] = "whisper-large-v3-turbo";  // Faster + accurate
+fields["language"] = "en";                    // Skip language detection
+fields["prompt"] = "Technical interview discussion...";
+
 HttpResponse response = httpClient_.PostMultipart(
-    endpoint,
-    {{"model", "whisper-large-v3"}},
-    "audio.wav", "file", wavData, "audio/wav",
-    headers
+    endpoint, fields, "audio.wav", "file", wavData, "audio/wav", headers
 );
-
-// Get the transcribed text
-std::string text = ParseWhisperResponse(response.body);
 ```
+
+### Screen Capture → AI Vision
+
+Select a region on screen, and the AI reads and answers the question:
+
+```cpp
+// 1. Capture the selected region
+CapturedImage capture = ScreenCapture::CaptureRegion(region);
+
+// 2. Convert BMP → JPEG using Windows Imaging Component (WIC)
+std::string base64Data = ScreenCapture::ConvertToBase64Bmp(capture);
+
+// 3. Send to Groq Vision API (Llama 4 Scout)
+meetingAssistant_->AnalyzeImage(base64Data);
+```
+
+The vision model reads text/questions from the image and provides direct answers.
 
 ---
 
@@ -368,13 +386,13 @@ The `MeetingAssistant` class ties everything together. It:
 └─────────────────────────────────────────────────────────────┘
 ```
 
-### The Transcription Loop
+### The Transcription Loop (Optimized)
 
 ```cpp
 void MeetingAssistant::TranscriptionWorker() {
     while (!shouldStop_) {
-        // Wait for transcription interval (5 seconds)
-        std::this_thread::sleep_for(std::chrono::seconds(5));
+        // Wait for 15 seconds (longer chunks = better accuracy)
+        std::this_thread::sleep_for(std::chrono::seconds(15));
         
         // Get accumulated audio data
         std::vector<BYTE> audioData;
@@ -384,11 +402,14 @@ void MeetingAssistant::TranscriptionWorker() {
             audioBuffer_.clear();
         }
         
-        // Skip if too little audio
-        if (audioData.size() < minSize) continue;
+        // Skip if too little audio (minimum 3 seconds)
+        if (audioData.size() < minBytes) continue;
         
-        // Transcribe with AI
-        std::string text = aiService_.Transcribe(audioData, ...);
+        // Resample to 16kHz mono 16-bit (Whisper's optimal format)
+        std::vector<BYTE> resampled = ResampleTo16kMono16bit(audioData, format);
+        
+        // Transcribe with optimized parameters
+        std::string text = aiService_.Transcribe(resampled, 16000, 1, 16);
         
         // Append to transcript
         if (!text.empty()) {
@@ -399,40 +420,41 @@ void MeetingAssistant::TranscriptionWorker() {
 }
 ```
 
-### Handling User Queries
+### Handling User Queries (with Conversation Memory)
 
 ```cpp
 void MeetingAssistant::AIWorker() {
     while (!shouldStop_) {
         // Wait for a query
-        std::unique_lock<std::mutex> lock(queryMutex_);
-        queryCV_.wait(lock, [this] { 
-            return shouldStop_ || !queryQueue_.empty(); 
-        });
-        
-        // Get the query
-        AIQuery query = queryQueue_.front();
-        queryQueue_.pop();
-        
-        // Get current transcript for context
+        AIQuery query = /* wait and pop from queue */;
         std::string transcript = GetTranscript();
         
-        // Process based on type
-        std::string response;
         switch (query.type) {
-            case QUESTION:
-                response = aiService_.AnswerQuestion(query.question, transcript);
+            case QUESTION: {
+                // Build messages WITH conversation history
+                std::vector<ChatMessage> messages;
+                messages.push_back({"system", systemPrompt});
+                messages.push_back({"system", "Transcript:\n" + transcript});
+                
+                // Include previous Q&A for follow-up context
+                for (auto& exchange : conversationHistory_) {
+                    messages.push_back({"user", exchange.first});
+                    messages.push_back({"assistant", exchange.second});
+                }
+                messages.push_back({"user", query.question});
+                
+                response = aiService_.Chat(messages);
+                
+                // Remember this exchange (max 10)
+                conversationHistory_.push_back({query.question, response});
                 break;
+            }
             case SUMMARY:
                 response = aiService_.Summarize(transcript);
                 break;
         }
         
-        // Emit response and speak it
         EmitEvent(AI_RESPONSE, response);
-        if (ttsEnabled_) {
-            tts_.Speak(response);
-        }
     }
 }
 ```
@@ -626,13 +648,14 @@ Audio Playing ──▶ WASAPI Loopback ──▶ AudioCapture
                                             ▼
                                    audioBuffer_ (accumulates)
                                             │
-                                  (every 5 seconds)
+                                  (every 15 seconds)
                                             │
                                             ▼
-                               TranscriptionWorker thread
+                               ResampleTo16kMono16bit()
                                             │
                                             ▼
                                aiService_.Transcribe()
+                          (whisper-large-v3-turbo, lang=en)
                                             │
                                             ▼
                                HTTP POST to Groq Whisper API
@@ -730,16 +753,17 @@ Now that you understand how it works, you could:
    - Save transcripts to file
    - Support multiple AI providers
    - Add voice input for questions
+   - Multi-language transcription support
 
 2. **Improve the UI:**
-   - Add animations
-   - Make it resizable
+   - Add animations and transitions
+   - Make panels resizable/draggable
    - Add settings panel
+   - Better code formatting in responses
 
-3. **Enhance AI:**
-   - Add conversation memory
-   - Custom prompts for different meeting types
-   - Multi-language support
+3. **Cross-platform:**
+   - Port to macOS / Linux
+   - Build a web-based version
 
 ---
 
