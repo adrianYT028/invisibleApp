@@ -1,18 +1,18 @@
-# 🔮 Invisible AI Assistant
+#  Invisible AI Assistant
 
 An **AI-powered invisible overlay** for Windows that helps you during interviews, meetings, and coding sessions — completely invisible to screen sharing and recordings.
 
-## ✨ What Makes It Special
+##  What Makes It Special
 
-- **👻 100% Invisible** — Uses `WDA_EXCLUDEFROMCAPTURE` to hide from Zoom, Teams, Discord, OBS, and all screen capture
-- **🤖 AI-Powered Answers** — Ask questions and get instant answers using Groq's Llama 4 Scout (free & fast)
-- **📸 Screen Capture → AI** — Select any area on screen, AI reads and answers the question
-- **🎙️ Live Audio Transcription** — Real-time transcription of meeting/interview audio using Whisper
-- **💬 Conversation Memory** — Remembers last 10 Q&A exchanges for follow-up questions
-- **🖱️ Click-Through** — Mouse events pass to underlying windows
-- **🔊 Optional TTS** — Text-to-speech for responses (disabled by default)
+- ** 100% Invisible** — Uses `WDA_EXCLUDEFROMCAPTURE` to hide from Zoom, Teams, Discord, OBS, and all screen capture
+- ** AI-Powered Answers** — Ask questions and get instant answers using Groq's Llama 4 Scout (free & fast)
+- ** Screen Capture → AI** — Select any area on screen, AI reads and answers the question
+- ** Live Audio Transcription** — Real-time transcription of meeting/interview audio using Whisper
+- ** Conversation Memory** — Remembers last 10 Q&A exchanges for follow-up questions
+- ** Click-Through** — Mouse events pass to underlying windows
+- ** Optional TTS** — Text-to-speech for responses (disabled by default)
 
-## 🛠️ Tech Stack
+##  Tech Stack
 
 | Component | Technology |
 |---|---|
@@ -23,14 +23,14 @@ An **AI-powered invisible overlay** for Windows that helps you during interviews
 | Image Processing | GDI+ / Windows Imaging Component |
 | TTS | Windows SAPI |
 
-## 📋 Requirements
+##  Requirements
 
 - Windows 10 version 2004 or later
 - Visual Studio 2019+ with C++ Desktop Development workload
 - Windows SDK 10.0.19041.0 or later
 - **Groq API Key** (free at [console.groq.com](https://console.groq.com))
 
-## 🚀 Setup
+##  Setup
 
 ### 1. Set API Key
 ```bash
@@ -53,7 +53,7 @@ InvisibleOverlay.exe          # TTS disabled (default)
 InvisibleOverlay.exe --tts    # Enable text-to-speech
 ```
 
-## ⌨️ Hotkeys
+##  Hotkeys
 
 | Hotkey | Action |
 |---|---|
@@ -64,7 +64,7 @@ InvisibleOverlay.exe --tts    # Enable text-to-speech
 | `Ctrl+Shift+V` | Toggle visibility to screen capture |
 | `Ctrl+Shift+Q` | Quit application |
 
-## 🏗️ Project Structure
+##  Project Structure
 
 ```
 INVISIBLE APP/
@@ -85,7 +85,7 @@ INVISIBLE APP/
 └── README.md
 ```
 
-## 🧠 Key Features Explained
+##  Key Features Explained
 
 ### Screen Capture → AI Answer
 Select any area on your screen (e.g., an interview question), and the AI reads the content and provides a direct answer. Uses WIC for BMP→JPEG conversion and Groq's Llama 4 Scout vision model.
@@ -106,17 +106,17 @@ The `WDA_EXCLUDEFROMCAPTURE` flag (Windows 10 2004+) tells DWM to exclude the wi
 - Screen recording (OBS, Windows Game Bar)
 - PrintWindow API / Desktop Duplication API
 
-## 🤝 Contributing
+##  Contributing
 
 We're looking for contributors! Areas where you can help:
-- 🎨 UI/UX design for the overlay
-- 🖥️ C++ / systems programming
-- 🤖 AI integration ideas
-- 📱 Cross-platform support
-- 🧪 Testing & QA
+-  UI/UX design for the overlay
+-  C++ / systems programming
+-  AI integration ideas
+-  Cross-platform support
+-  Testing & QA
 
 **DM or open an issue if interested!**
 
-## ⚠️ Disclaimer
+##  Disclaimer
 
 This application is for **research and educational purposes only**. Understanding these techniques helps security researchers and platform developers build better detection mechanisms.
