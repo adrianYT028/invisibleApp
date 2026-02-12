@@ -23,6 +23,7 @@
 #include "meeting_assistant.h"
 #include "overlay_window.h"
 #include "screen_capture.h"
+#include "tray_icon.h"
 #include <deque>
 #include <iostream>
 #include <memory>
@@ -39,7 +40,7 @@ struct AppConfig {
   bool enableOverlay = true;
   bool enableAI = true;
   bool debugMode = false;
-  BYTE overlayAlpha = 220;
+  BYTE overlayAlpha = 140;
 
   // AI Configuration
   std::string openaiApiKey;
@@ -71,6 +72,8 @@ private:
   void OnHotkey(int hotkeyId);
   void OnRegionSelected(const Rect &region);
   void OnMeetingAssistantEvent(const MeetingAssistantEvent &event);
+  void OnTrayCommand(UINT commandId);
+  bool OnWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
   void RenderOverlay(HDC hdc, const Rect &bounds);
   void RegisterAIHotkeys();
   void UnregisterAIHotkeys();
@@ -81,6 +84,7 @@ private:
   std::unique_ptr<AudioBufferQueue> audioQueue_;
   std::unique_ptr<RegionSelector> regionSelector_;
   std::unique_ptr<MeetingAssistant> meetingAssistant_;
+  TrayIcon trayIcon_;
 
   // Display state
   std::wstring statusText_ = L"Initializing...";
@@ -148,7 +152,7 @@ bool InvisibleApp::Initialize(const AppConfig &config) {
     overlayConfig.hideFromTaskbar = true;
     overlayConfig.alwaysOnTop = true;
     overlayConfig.debugMode = config_.debugMode;
-    overlayConfig.backgroundColor = RGB(20, 20, 25);
+    overlayConfig.backgroundColor = RGB(15, 15, 20);
 
     if (!overlay_->Create(overlayConfig)) {
       LogError(L"Failed to create overlay window");
@@ -159,9 +163,20 @@ bool InvisibleApp::Initialize(const AppConfig &config) {
     overlay_->SetHotkeyCallback([this](int id) { OnHotkey(id); });
     overlay_->SetRenderCallback(
         [this](HDC hdc, const Rect &bounds) { RenderOverlay(hdc, bounds); });
+    overlay_->SetMessageCallback(
+        [this](HWND h, UINT m, WPARAM w, LPARAM l) {
+          return OnWindowMessage(h, m, w, l);
+        });
 
     // Register AI hotkeys
     RegisterAIHotkeys();
+
+    // Create system tray icon (user's only visible UI presence)
+    trayIcon_.Create(overlay_->GetHandle(), L"AI Meeting Assistant");
+    trayIcon_.SetCommandCallback([this](UINT cmd) { OnTrayCommand(cmd); });
+    trayIcon_.ShowBalloon(L"AI Meeting Assistant",
+                          L"Running in background. Ctrl+Shift+Q to quit.",
+                          NIIF_INFO, 3000);
 
     LogInfo(L"Overlay window created");
   }
@@ -240,6 +255,8 @@ int InvisibleApp::Run() {
 
 void InvisibleApp::Shutdown() {
   UnregisterAIHotkeys();
+
+  trayIcon_.Destroy();
 
   if (meetingAssistant_) {
     meetingAssistant_->Shutdown();
@@ -388,6 +405,77 @@ void InvisibleApp::OnHotkey(int hotkeyId) {
   }
 }
 
+// -----------------------------------------------------------------------------
+// Window Message Handler (for tray icon messages)
+// -----------------------------------------------------------------------------
+
+bool InvisibleApp::OnWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+  (void)hwnd;
+  if (msg == TrayIcon::WM_TRAYICON) {
+    return trayIcon_.HandleMessage(wParam, lParam);
+  }
+  return false;
+}
+
+// -----------------------------------------------------------------------------
+// Tray Icon Command Handler
+// -----------------------------------------------------------------------------
+
+void InvisibleApp::OnTrayCommand(UINT commandId) {
+  switch (commandId) {
+    case TRAY_CMD_SHOW_HIDE:
+      if (overlay_) {
+        overlay_->Show(!overlay_->IsVisible());
+      }
+      break;
+
+    case TRAY_CMD_ASK_AI:
+      OnHotkey(AIHotkeys::HOTKEY_ASK_AI);
+      break;
+
+    case TRAY_CMD_SUMMARY:
+      OnHotkey(AIHotkeys::HOTKEY_SUMMARY);
+      break;
+
+    case TRAY_CMD_TOGGLE_CAPTURE:
+      OnHotkey(HotkeyManager::HOTKEY_TOGGLE_VISIBILITY);
+      break;
+
+    case TRAY_CMD_TOGGLE_TRANSCRIPT:
+      OnHotkey(AIHotkeys::HOTKEY_TOGGLE_TRANSCRIPT);
+      break;
+
+    case TRAY_CMD_TOGGLE_AUDIO:
+      if (meetingAssistant_) {
+        if (meetingAssistant_->IsListening()) {
+          meetingAssistant_->StopListening();
+          aiListening_ = false;
+          statusText_ = L"Audio capture stopped";
+        } else {
+          if (meetingAssistant_->StartListening()) {
+            aiListening_ = true;
+            statusText_ = L"Audio capture resumed";
+          }
+        }
+        if (overlay_) overlay_->Invalidate();
+      }
+      break;
+
+    case TRAY_CMD_ABOUT:
+      MessageBoxW(nullptr,
+          L"AI Meeting Assistant v1.0\n\n"
+          L"Research application demonstrating invisible overlay technology.\n"
+          L"Uses WDA_EXCLUDEFROMCAPTURE, WASAPI loopback, and Groq AI.\n\n"
+          L"For research and educational purposes only.",
+          L"About", MB_OK | MB_ICONINFORMATION);
+      break;
+
+    case TRAY_CMD_QUIT:
+      if (overlay_) overlay_->PostQuit();
+      break;
+  }
+}
+
 void InvisibleApp::OnRegionSelected(const Rect &region) {
   if (overlay_)
     overlay_->Show(true);
@@ -437,13 +525,13 @@ void InvisibleApp::RenderOverlay(HDC hdc, const Rect &bounds) {
   int panelX = 20, panelY = 20;
   int panelWidth = 420, panelHeight = 140;
 
-  HBRUSH panelBrush = CreateSolidBrush(RGB(25, 28, 35));
+  HBRUSH panelBrush = CreateSolidBrush(RGB(10, 12, 18));
   RECT panelRect = {panelX, panelY, panelX + panelWidth, panelY + panelHeight};
   FillRect(hdc, &panelRect, panelBrush);
   DeleteObject(panelBrush);
 
   // Border
-  HPEN borderPen = CreatePen(PS_SOLID, 2, RGB(60, 130, 200));
+  HPEN borderPen = CreatePen(PS_SOLID, 2, RGB(70, 140, 220));
   HPEN oldPen = static_cast<HPEN>(SelectObject(hdc, borderPen));
   HBRUSH oldBrush =
       static_cast<HBRUSH>(SelectObject(hdc, GetStockObject(NULL_BRUSH)));
@@ -509,14 +597,14 @@ void InvisibleApp::RenderOverlay(HDC hdc, const Rect &bounds) {
     int transWidth = 420;
     int transHeight = 200;
 
-    HBRUSH transBrush = CreateSolidBrush(RGB(20, 25, 30));
+    HBRUSH transBrush = CreateSolidBrush(RGB(8, 10, 16));
     RECT transRect = {transX, transY, transX + transWidth,
                       transY + transHeight};
     FillRect(hdc, &transRect, transBrush);
     DeleteObject(transBrush);
 
     // Border
-    HPEN transBorderPen = CreatePen(PS_SOLID, 1, RGB(60, 80, 100));
+    HPEN transBorderPen = CreatePen(PS_SOLID, 2, RGB(70, 100, 140));
     oldPen = static_cast<HPEN>(SelectObject(hdc, transBorderPen));
     oldBrush =
         static_cast<HBRUSH>(SelectObject(hdc, GetStockObject(NULL_BRUSH)));
@@ -554,13 +642,13 @@ void InvisibleApp::RenderOverlay(HDC hdc, const Rect &bounds) {
   int respWidth = 430;
   int respHeight = lastAIResponse_.empty() ? 80 : 220;
 
-  HBRUSH respBrush = CreateSolidBrush(RGB(25, 35, 45));
+  HBRUSH respBrush = CreateSolidBrush(RGB(8, 14, 22));
   RECT respRect = {respX, panelY, respX + respWidth, panelY + respHeight};
   FillRect(hdc, &respRect, respBrush);
   DeleteObject(respBrush);
 
   // Border
-  HPEN respBorderPen = CreatePen(PS_SOLID, 2, RGB(80, 140, 200));
+  HPEN respBorderPen = CreatePen(PS_SOLID, 2, RGB(80, 150, 220));
   oldPen = static_cast<HPEN>(SelectObject(hdc, respBorderPen));
   oldBrush = static_cast<HBRUSH>(SelectObject(hdc, GetStockObject(NULL_BRUSH)));
   Rectangle(hdc, respX, panelY, respX + respWidth, panelY + respHeight);
@@ -604,8 +692,17 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   (void)lpCmdLine;
   (void)nCmdShow;
 
-  // Attach console for debug output
-  if (AttachConsole(ATTACH_PARENT_PROCESS) || AllocConsole()) {
+  // Single instance check - prevent running multiple copies
+  HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"InvisibleOverlay_SingleInstance");
+  if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    // Already running
+    if (hMutex) CloseHandle(hMutex);
+    return 0;
+  }
+
+  // Only attach to existing console (e.g. when launched from cmd).
+  // NEVER call AllocConsole() - that creates a visible console window in taskbar!
+  if (AttachConsole(ATTACH_PARENT_PROCESS)) {
     FILE *fp;
     freopen_s(&fp, "CONOUT$", "w", stdout);
     freopen_s(&fp, "CONOUT$", "w", stderr);
@@ -666,13 +763,11 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   int result = app.Run();
   app.Shutdown();
 
-  return result;
-}
+  // Release single-instance mutex
+  if (hMutex) {
+    ReleaseMutex(hMutex);
+    CloseHandle(hMutex);
+  }
 
-// Console entry point for testing
-int wmain(int argc, wchar_t *argv[]) {
-  (void)argc;
-  (void)argv;
-  return wWinMain(GetModuleHandleW(nullptr), nullptr, GetCommandLineW(),
-                  SW_SHOW);
+  return result;
 }

@@ -286,6 +286,10 @@ void OverlayWindow::SetHotkeyCallback(HotkeyCallback callback) {
     hotkeyCallback_ = std::move(callback);
 }
 
+void OverlayWindow::SetMessageCallback(MessageCallback callback) {
+    messageCallback_ = std::move(callback);
+}
+
 void OverlayWindow::Invalidate() {
     if (hwnd_) {
         InvalidateRect(hwnd_, nullptr, FALSE);
@@ -344,6 +348,13 @@ LRESULT CALLBACK OverlayWindow::WindowProc(HWND hwnd, UINT msg, WPARAM wParam, L
 }
 
 LRESULT OverlayWindow::HandleMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    // Let the generic message callback handle first (for tray icon, etc.)
+    if (messageCallback_) {
+        if (messageCallback_(hwnd, msg, wParam, lParam)) {
+            return 0;
+        }
+    }
+
     switch (msg) {
         case WM_PAINT: {
             PAINTSTRUCT ps;

@@ -41,6 +41,7 @@ class OverlayWindow {
 public:
     using RenderCallback = std::function<void(HDC hdc, const Rect& bounds)>;
     using HotkeyCallback = std::function<void(int hotkeyId)>;
+    using MessageCallback = std::function<bool(HWND, UINT, WPARAM, LPARAM)>;
     
     OverlayWindow();
     ~OverlayWindow();
@@ -87,6 +88,9 @@ public:
     // Set hotkey handler
     void SetHotkeyCallback(HotkeyCallback callback);
     
+    // Set generic message callback (for tray icon, custom messages, etc.)
+    void SetMessageCallback(MessageCallback callback);
+    
     // Force a repaint
     void Invalidate();
     
@@ -114,6 +118,7 @@ private:
     OverlayConfig config_;
     RenderCallback renderCallback_;
     HotkeyCallback hotkeyCallback_;
+    MessageCallback messageCallback_;
     
     // Double buffering
     void CreateBackBuffer(int width, int height);
