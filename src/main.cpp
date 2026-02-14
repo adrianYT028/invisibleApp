@@ -163,10 +163,9 @@ bool InvisibleApp::Initialize(const AppConfig &config) {
     overlay_->SetHotkeyCallback([this](int id) { OnHotkey(id); });
     overlay_->SetRenderCallback(
         [this](HDC hdc, const Rect &bounds) { RenderOverlay(hdc, bounds); });
-    overlay_->SetMessageCallback(
-        [this](HWND h, UINT m, WPARAM w, LPARAM l) {
-          return OnWindowMessage(h, m, w, l);
-        });
+    overlay_->SetMessageCallback([this](HWND h, UINT m, WPARAM w, LPARAM l) {
+      return OnWindowMessage(h, m, w, l);
+    });
 
     // Register AI hotkeys
     RegisterAIHotkeys();
@@ -409,7 +408,8 @@ void InvisibleApp::OnHotkey(int hotkeyId) {
 // Window Message Handler (for tray icon messages)
 // -----------------------------------------------------------------------------
 
-bool InvisibleApp::OnWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+bool InvisibleApp::OnWindowMessage(HWND hwnd, UINT msg, WPARAM wParam,
+                                   LPARAM lParam) {
   (void)hwnd;
   if (msg == TrayIcon::WM_TRAYICON) {
     return trayIcon_.HandleMessage(wParam, lParam);
@@ -423,56 +423,59 @@ bool InvisibleApp::OnWindowMessage(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lP
 
 void InvisibleApp::OnTrayCommand(UINT commandId) {
   switch (commandId) {
-    case TRAY_CMD_SHOW_HIDE:
-      if (overlay_) {
-        overlay_->Show(!overlay_->IsVisible());
-      }
-      break;
+  case TRAY_CMD_SHOW_HIDE:
+    if (overlay_) {
+      overlay_->Show(!overlay_->IsVisible());
+    }
+    break;
 
-    case TRAY_CMD_ASK_AI:
-      OnHotkey(AIHotkeys::HOTKEY_ASK_AI);
-      break;
+  case TRAY_CMD_ASK_AI:
+    OnHotkey(AIHotkeys::HOTKEY_ASK_AI);
+    break;
 
-    case TRAY_CMD_SUMMARY:
-      OnHotkey(AIHotkeys::HOTKEY_SUMMARY);
-      break;
+  case TRAY_CMD_SUMMARY:
+    OnHotkey(AIHotkeys::HOTKEY_SUMMARY);
+    break;
 
-    case TRAY_CMD_TOGGLE_CAPTURE:
-      OnHotkey(HotkeyManager::HOTKEY_TOGGLE_VISIBILITY);
-      break;
+  case TRAY_CMD_TOGGLE_CAPTURE:
+    OnHotkey(HotkeyManager::HOTKEY_TOGGLE_VISIBILITY);
+    break;
 
-    case TRAY_CMD_TOGGLE_TRANSCRIPT:
-      OnHotkey(AIHotkeys::HOTKEY_TOGGLE_TRANSCRIPT);
-      break;
+  case TRAY_CMD_TOGGLE_TRANSCRIPT:
+    OnHotkey(AIHotkeys::HOTKEY_TOGGLE_TRANSCRIPT);
+    break;
 
-    case TRAY_CMD_TOGGLE_AUDIO:
-      if (meetingAssistant_) {
-        if (meetingAssistant_->IsListening()) {
-          meetingAssistant_->StopListening();
-          aiListening_ = false;
-          statusText_ = L"Audio capture stopped";
-        } else {
-          if (meetingAssistant_->StartListening()) {
-            aiListening_ = true;
-            statusText_ = L"Audio capture resumed";
-          }
+  case TRAY_CMD_TOGGLE_AUDIO:
+    if (meetingAssistant_) {
+      if (meetingAssistant_->IsListening()) {
+        meetingAssistant_->StopListening();
+        aiListening_ = false;
+        statusText_ = L"Audio capture stopped";
+      } else {
+        if (meetingAssistant_->StartListening()) {
+          aiListening_ = true;
+          statusText_ = L"Audio capture resumed";
         }
-        if (overlay_) overlay_->Invalidate();
       }
-      break;
+      if (overlay_)
+        overlay_->Invalidate();
+    }
+    break;
 
-    case TRAY_CMD_ABOUT:
-      MessageBoxW(nullptr,
-          L"AI Meeting Assistant v1.0\n\n"
-          L"Research application demonstrating invisible overlay technology.\n"
-          L"Uses WDA_EXCLUDEFROMCAPTURE, WASAPI loopback, and Groq AI.\n\n"
-          L"For research and educational purposes only.",
-          L"About", MB_OK | MB_ICONINFORMATION);
-      break;
+  case TRAY_CMD_ABOUT:
+    MessageBoxW(
+        nullptr,
+        L"AI Meeting Assistant v1.0\n\n"
+        L"Research application demonstrating invisible overlay technology.\n"
+        L"Uses WDA_EXCLUDEFROMCAPTURE, WASAPI loopback, and Groq AI.\n\n"
+        L"For research and educational purposes only.",
+        L"About", MB_OK | MB_ICONINFORMATION);
+    break;
 
-    case TRAY_CMD_QUIT:
-      if (overlay_) overlay_->PostQuit();
-      break;
+  case TRAY_CMD_QUIT:
+    if (overlay_)
+      overlay_->PostQuit();
+    break;
   }
 }
 
@@ -597,14 +600,22 @@ void InvisibleApp::RenderOverlay(HDC hdc, const Rect &bounds) {
     int transWidth = 420;
     int transHeight = 200;
 
-    HBRUSH transBrush = CreateSolidBrush(RGB(8, 10, 16));
+    // Dark solid background — stands out from overlay
+    HBRUSH transBrush = CreateSolidBrush(RGB(2, 2, 6));
     RECT transRect = {transX, transY, transX + transWidth,
                       transY + transHeight};
     FillRect(hdc, &transRect, transBrush);
     DeleteObject(transBrush);
 
-    // Border
-    HPEN transBorderPen = CreatePen(PS_SOLID, 2, RGB(70, 100, 140));
+    // Inner content area — even darker for text readability
+    HBRUSH transInnerBrush = CreateSolidBrush(RGB(0, 0, 0));
+    RECT transInnerRect = {transX + 5, transY + 32, transX + transWidth - 5,
+                           transY + transHeight - 5};
+    FillRect(hdc, &transInnerRect, transInnerBrush);
+    DeleteObject(transInnerBrush);
+
+    // Glowing border
+    HPEN transBorderPen = CreatePen(PS_SOLID, 2, RGB(50, 130, 200));
     oldPen = static_cast<HPEN>(SelectObject(hdc, transBorderPen));
     oldBrush =
         static_cast<HBRUSH>(SelectObject(hdc, GetStockObject(NULL_BRUSH)));
@@ -614,19 +625,19 @@ void InvisibleApp::RenderOverlay(HDC hdc, const Rect &bounds) {
     DeleteObject(transBorderPen);
 
     SelectObject(hdc, titleFont);
-    SetTextColor(hdc, RGB(80, 160, 220));
+    SetTextColor(hdc, RGB(80, 180, 255));
     textRect = {transX + 10, transY + 8, transX + transWidth - 10, transY + 28};
     DrawTextW(hdc, L"Live Transcript", -1, &textRect, DT_LEFT);
 
     SelectObject(hdc, font);
     if (transcriptLines_.empty()) {
-      SetTextColor(hdc, RGB(100, 100, 110));
-      textRect = {transX + 10, transY + 35, transX + transWidth - 10,
-                  transY + 55};
+      SetTextColor(hdc, RGB(100, 100, 120));
+      textRect = {transX + 10, transY + 38, transX + transWidth - 10,
+                  transY + 58};
       DrawTextW(hdc, L"(Waiting for audio...)", -1, &textRect, DT_LEFT);
     } else {
-      SetTextColor(hdc, RGB(200, 200, 200));
-      int lineY = transY + 35;
+      SetTextColor(hdc, RGB(220, 225, 230));
+      int lineY = transY + 38;
       for (const auto &line : transcriptLines_) {
         textRect = {transX + 10, lineY, transX + transWidth - 10, lineY + 18};
         DrawTextW(hdc, line.c_str(), -1, &textRect, DT_LEFT | DT_END_ELLIPSIS);
@@ -636,19 +647,27 @@ void InvisibleApp::RenderOverlay(HDC hdc, const Rect &bounds) {
   }
 
   // =========================================================================
-  // AI Response Panel (top-right)
+  // AI Response Panel (top-right) — darkest, most prominent
   // =========================================================================
-  int respX = bounds.width - 450;
   int respWidth = 430;
-  int respHeight = lastAIResponse_.empty() ? 80 : 220;
+  int respX = (bounds.width - respWidth) / 2; // Centered horizontally
+  int respHeight = lastAIResponse_.empty() ? 80 : 260;
 
-  HBRUSH respBrush = CreateSolidBrush(RGB(8, 14, 22));
+  // Solid dark background
+  HBRUSH respBrush = CreateSolidBrush(RGB(2, 2, 6));
   RECT respRect = {respX, panelY, respX + respWidth, panelY + respHeight};
   FillRect(hdc, &respRect, respBrush);
   DeleteObject(respBrush);
 
-  // Border
-  HPEN respBorderPen = CreatePen(PS_SOLID, 2, RGB(80, 150, 220));
+  // Inner content area — pure black for maximum text contrast
+  HBRUSH respInnerBrush = CreateSolidBrush(RGB(0, 0, 0));
+  RECT respInnerRect = {respX + 5, panelY + 32, respX + respWidth - 5,
+                        panelY + respHeight - 5};
+  FillRect(hdc, &respInnerRect, respInnerBrush);
+  DeleteObject(respInnerBrush);
+
+  // Bright glowing border
+  HPEN respBorderPen = CreatePen(PS_SOLID, 2, RGB(60, 160, 255));
   oldPen = static_cast<HPEN>(SelectObject(hdc, respBorderPen));
   oldBrush = static_cast<HBRUSH>(SelectObject(hdc, GetStockObject(NULL_BRUSH)));
   Rectangle(hdc, respX, panelY, respX + respWidth, panelY + respHeight);
@@ -657,19 +676,19 @@ void InvisibleApp::RenderOverlay(HDC hdc, const Rect &bounds) {
   DeleteObject(respBorderPen);
 
   SelectObject(hdc, titleFont);
-  SetTextColor(hdc, RGB(100, 200, 255));
+  SetTextColor(hdc, RGB(80, 200, 255));
   textRect = {respX + 15, panelY + 10, respX + respWidth - 15, panelY + 30};
   DrawTextW(hdc, L"AI Response", -1, &textRect, DT_LEFT);
 
   SelectObject(hdc, font);
   if (lastAIResponse_.empty()) {
-    SetTextColor(hdc, RGB(100, 100, 110));
-    textRect = {respX + 15, panelY + 38, respX + respWidth - 15, panelY + 70};
+    SetTextColor(hdc, RGB(100, 100, 120));
+    textRect = {respX + 15, panelY + 40, respX + respWidth - 15, panelY + 70};
     DrawTextW(hdc, L"Press Ctrl+Shift+A to ask, M for summary", -1, &textRect,
               DT_LEFT);
   } else {
-    SetTextColor(hdc, RGB(230, 230, 230));
-    textRect = {respX + 15, panelY + 38, respX + respWidth - 15,
+    SetTextColor(hdc, RGB(240, 245, 250));
+    textRect = {respX + 15, panelY + 40, respX + respWidth - 15,
                 panelY + respHeight - 10};
     DrawTextW(hdc, lastAIResponse_.c_str(), -1, &textRect,
               DT_LEFT | DT_WORDBREAK);
@@ -693,15 +712,18 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance,
   (void)nCmdShow;
 
   // Single instance check - prevent running multiple copies
-  HANDLE hMutex = CreateMutexW(nullptr, TRUE, L"InvisibleOverlay_SingleInstance");
+  HANDLE hMutex =
+      CreateMutexW(nullptr, TRUE, L"InvisibleOverlay_SingleInstance");
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
     // Already running
-    if (hMutex) CloseHandle(hMutex);
+    if (hMutex)
+      CloseHandle(hMutex);
     return 0;
   }
 
   // Only attach to existing console (e.g. when launched from cmd).
-  // NEVER call AllocConsole() - that creates a visible console window in taskbar!
+  // NEVER call AllocConsole() - that creates a visible console window in
+  // taskbar!
   if (AttachConsole(ATTACH_PARENT_PROCESS)) {
     FILE *fp;
     freopen_s(&fp, "CONOUT$", "w", stdout);
